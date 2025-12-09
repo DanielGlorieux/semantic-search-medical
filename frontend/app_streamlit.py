@@ -5,7 +5,7 @@ import time
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-from datetime import datetime as dt
+from datetime import datetime
 
 # Configuration
 API_URL = "http://localhost:8000"
@@ -188,12 +188,11 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # Sidebar
-st.sidebar.image("https://img.icons8.com/fluency/96/000000/health-checkup.png", width=80)
-st.sidebar.title("⚙️ Configuration")
+st.sidebar.title("Configuration")
 st.sidebar.markdown("---")
 
 # Search parameters
-st.sidebar.subheader("🔍 Paramètres de recherche")
+st.sidebar.subheader("Paramètres de recherche")
 top_k = st.sidebar.slider(
     "Nombre de résultats", 
     min_value=1, 
@@ -203,38 +202,27 @@ top_k = st.sidebar.slider(
 )
 
 use_reranking = st.sidebar.checkbox(
-    "✨ Re-ranking avec CrossEncoder", 
+    "Re-ranking avec CrossEncoder", 
     value=True,
     help="Améliore la précision mais augmente la latence"
 )
 
 hybrid = st.sidebar.checkbox(
-    "🔄 Mode hybride (Dense + Sparse)", 
+    "Mode hybride (Dense + Sparse)", 
     value=False,
     help="Combine recherche sémantique et lexicale"
 )
 
-st.sidebar.markdown("---")
-
-# System info
-st.sidebar.subheader("📊 Informations Système")
-try:
-    response = requests.get(f"{API_URL}/health", timeout=3)
-    if response.status_code == 200:
-        health = response.json()
-        if health.get("search_engine_loaded"):
-            st.sidebar.success("✅ Backend Opérationnel")
-        else:
-            st.sidebar.warning("⚠️ Backend Chargement...")
-    else:
-        st.sidebar.error("❌ Backend Inaccessible")
-except:
-    st.sidebar.error("❌ Backend Hors Ligne")
+use_rag = st.sidebar.checkbox(
+    "Activer RAG avec Gemini", 
+    value=True,
+    help="Génère une réponse conviviale en français avec l'IA"
+)
 
 st.sidebar.markdown("---")
 
 # About section
-with st.sidebar.expander("ℹ️ À propos"):
+with st.sidebar.expander("À propos"):
     st.markdown("""
     **Medical Search Engine**
     
@@ -242,12 +230,18 @@ with st.sidebar.expander("ℹ️ À propos"):
     - 🧠 **Model**: Sentence Transformers
     - 🚀 **Index**: FAISS
     - ⚡ **Backend**: FastAPI
+    - 🤖 **RAG**: Google Gemini 2.5 Flash
     
-    **Auteur**: ILBOUDO P. Daniel Glorieux
+    **Auteur**: 
+    
+    - ILBOUDO P. Daniel Glorieux
+    - KONE M'pié Aïman
+    - RABESIAKA Mamy Heri
+    
     """)
 
 # Medical disclaimer
-with st.sidebar.expander("⚠️ Avertissement Médical"):
+with st.sidebar.expander("Avertissement Médical"):
     st.warning("""
     **IMPORTANT**
     
@@ -264,7 +258,7 @@ with header_container:
     with col2:
         st.markdown("""
         <div style='text-align: center; padding: 20px;'>
-            <h1 style='font-size: 3em; margin-bottom: 0; color: #64b5f6;'>🏥 Medical Search Engine</h1>
+            <h1 style='font-size: 3em; margin-bottom: 0; color: #64b5f6;'> Moteur de recherche médical</h1>
             <p style='font-size: 1.2em; color: #e0e0e0; margin-top: 10px;'>
                 Recherche sémantique dans 16,412 questions médicales
             </p>
@@ -276,12 +270,12 @@ st.markdown("<br>", unsafe_allow_html=True)
 # Search box in a card
 search_container = st.container()
 with search_container:
-    st.markdown("""
-    <div style='background-color: #1e2130; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5); border: 1px solid #2e3140;'>
-    """, unsafe_allow_html=True)
+    #st.markdown("""
+    #<div style='background-color: #1e2130; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5); border: 1px solid #2e3140;'>
+    #""", unsafe_allow_html=True)
     
     query = st.text_input(
-        "🔍 Entrez votre question médicale :",
+        "Entrez votre question médicale :",
         placeholder="Ex: What are the symptoms of diabetes?",
         key="search_query",
         label_visibility="collapsed"
@@ -308,7 +302,7 @@ if clear_button:
 
 # Search logic
 if search_button and query:
-    with st.spinner("🔎 Recherche en cours..."):
+    with st.spinner("Recherche en cours..."):
         start_time = time.time()
         try:
             response = requests.post(
@@ -317,9 +311,10 @@ if search_button and query:
                     "query": query,
                     "top_k": top_k,
                     "use_reranking": use_reranking,
-                    "hybrid": hybrid
+                    "hybrid": hybrid,
+                    "use_rag": use_rag
                 },
-                timeout=30
+                timeout=120  # 2 minutes pour permettre à Gemini de répondre
             )
             
             if response.status_code == 200:
@@ -339,12 +334,36 @@ if search_button and query:
                 with metric_cols[2]:
                     st.metric("🔄 Re-ranking", "✓" if use_reranking else "✗")
                 with metric_cols[3]:
-                    st.metric("🎯 Mode", "Hybride" if hybrid else "Dense")
+                    st.metric("🤖 RAG", "✓" if use_rag else "✗")
                 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
+                # Display RAG response if available
+                if use_rag and data.get("rag_response"):
+                    st.markdown("### 🤖 Réponse Générée par l'IA")
+                    
+                    # Display the friendly AI response in a nice box
+                    st.markdown("""
+                    <div style='background-color: #1e2130; padding: 25px; border-radius: 15px; border-left: 5px solid #64b5f6; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);'>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown(f"""
+                    <div style='color: #e0e0e0; font-size: 1.1em; line-height: 1.7;'>
+                    {data['rag_response']}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.markdown("</div>", unsafe_allow_html=True)
+                    
+                    # Display summary if available
+                    if data.get("rag_summary"):
+                        with st.expander("📝 Résumé des Sources", expanded=False):
+                            st.info(data['rag_summary'])
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                
                 # Display results with enhanced UI
-                st.markdown("### 📋 Résultats de Recherche")
+                st.markdown("### 📋 Documents Sources")
                 
                 # Create tabs for different views
                 tab1, tab2 = st.tabs(["📄 Vue Liste", "📊 Vue Scores"])

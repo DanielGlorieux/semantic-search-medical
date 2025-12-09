@@ -43,8 +43,11 @@ class SemanticSearchEngine:
         logger.info("Loading documents...")
         docs_path = self.data_dir / "docs.csv"
         if docs_path.exists():
-            self.documents = pd.read_csv(docs_path, dtype={'doc_id': str})
-            self.doc_ids = self.documents['doc_id'].astype(str).tolist()
+            # Force doc_id to be string
+            self.documents = pd.read_csv(docs_path)
+            self.documents['doc_id'] = self.documents['doc_id'].astype(str)
+            self.doc_ids = self.documents['doc_id'].tolist()
+            logger.info(f"Loaded {len(self.documents)} documents")
         else:
             logger.warning("Documents file not found.")
         
@@ -83,12 +86,19 @@ class SemanticSearchEngine:
             if idx < len(self.doc_ids):
                 doc_id = self.doc_ids[idx]
                 doc_row = self.documents[self.documents['doc_id'] == doc_id].iloc[0]
-                results.append({
+                result = {
                     'doc_id': str(doc_id),  # Ensure doc_id is always string
                     'text': str(doc_row['text']),
                     'score': float(score),
                     'rank': i + 1
-                })
+                }
+                # Add optional metadata if available
+                if 'source' in doc_row:
+                    result['source'] = str(doc_row['source'])
+                if 'focus_area' in doc_row:
+                    result['focus_area'] = str(doc_row['focus_area'])
+                    
+                results.append(result)
         
         # Reranking with CrossEncoder
         if use_reranking and len(results) > 0:
