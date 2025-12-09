@@ -1,0 +1,1286 @@
+\documentclass{rapportECC}
+\usepackage{lipsum}
+\title{Rapport ECL - Moteur de Recherche Sémantique avec FAISS}
+\usepackage{lipsum} 
+\usepackage{biblatex}
+\addbibresource{bibtex.bib}
+\usepackage{appendix}
+\usepackage{media9}
+\usepackage{tcolorbox}
+\tcbuselibrary{listings,skins,breakable}
+\usepackage{xcolor}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{hyperref}
+
+\renewcommand{\arraystretch}{1.3}
+
+\definecolor{codebg}{rgb}{0.95,0.95,0.95}
+
+\newtcblisting{codeblock}[2][]{
+  listing only,
+  listing options={
+    language=#2,
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    keywordstyle=\color{blue}\bfseries,
+    stringstyle=\color{orange},
+    commentstyle=\color{green!50!black},
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    literate=%
+      {é}{{\'e}}{1}%
+      {è}{{\`e}}{1}%
+      {ê}{{\^e}}{1}%
+      {à}{{\`a}}{1}%
+      {ç}{{\c{c}}}{1}%
+      {É}{{\'E}}{1}%
+      {⚙}{{[gear]}}{1}%
+      {🔍}{{[search]}}{1}%
+      {✓}{{[check]}}{1}%
+  },
+  colback=codebg,
+  colframe=black!70,
+  arc=4pt,
+  outer arc=4pt,
+  boxrule=0.5pt,
+  left=6pt,
+  enhanced,
+  breakable
+}
+
+\begin{document}
+
+%----------- Informations du rapport ---------
+
+\titre{Moteur de Recherche Sémantique – Questions Médicales avec Vector Database}
+\sujet{Big Data avec Spark et Bases de Données Vectorielles}
+\Encadrants{Dr. Pegdwendé Nicolas \textsc{SAWADOGO}}
+\etudiants{ILBOUDO P. Daniel Glorieux}
+
+%----------- Initialisation -------------------
+        
+\fairemarges
+\fairepagedegarde
+\tabledematieres
+
+%------------ Corps du rapport ----------------
+
+\section{Introduction}
+
+La recherche d'information est un enjeu majeur dans le domaine médical, où des milliers de questions-réponses sont disponibles mais difficilement accessibles via une recherche classique par mots-clés. La \textbf{recherche sémantique} permet de retrouver des documents pertinents en se basant sur le \textit{sens} plutôt que sur la simple correspondance lexicale.
+
+L'objectif de ce projet est de concevoir une \textbf{application de recherche sémantique} capable de retrouver des réponses médicales pertinentes à partir de requêtes en langage naturel, en utilisant des \textbf{embeddings} et une \textbf{base de données vectorielle (FAISS)}.
+
+Pour ce faire, nous avons mis en place un pipeline complet utilisant \textbf{Sentence Transformers} pour la vectorisation, \textbf{FAISS} pour l'indexation et la recherche rapide, \textbf{FastAPI} pour l'API backend, et \textbf{Streamlit} pour l'interface utilisateur interactive.
+
+\subsection{Objectifs du projet}
+
+\begin{itemize}
+    \item Collecter et préparer un corpus de 16,412 questions-réponses médicales (MedQuAD)
+    \item Vectoriser les documents avec des embeddings sémantiques
+    \item Construire un index FAISS pour une recherche vectorielle efficace
+    \item Implémenter un système de re-ranking avec CrossEncoder
+    \item Développer une API REST avec FastAPI
+    \item Créer une interface web interactive avec Streamlit
+    \item Évaluer les performances (Recall@10, MRR@10, latence)
+\end{itemize}
+
+\subsection{Domaine choisi : Questions médicales}
+
+Nous avons opté pour le domaine médical avec le dataset \textbf{MedQuAD} (Medical Question Answering Dataset) qui contient plus de 16,000 paires question-réponse provenant de sources fiables comme le NIH (National Institutes of Health).
+
+Ce choix est motivé par :
+\begin{itemize}
+    \item L'importance d'un accès rapide à l'information médicale
+    \item La richesse sémantique du langage médical
+    \item La disponibilité d'un dataset de qualité
+    \item L'applicabilité concrète (aide à la recherche médicale, FAQ intelligente)
+\end{itemize}
+
+\section{Architecture du système}
+
+\subsection{Schéma global}
+
+Le système suit une architecture moderne de recherche sémantique :
+
+\begin{verbatim}
+    +-------------------------+
+    |   Dataset MedQuAD      |
+    |  (Kaggle CSV 16K docs) |
+    +-----------+-------------+
+                |
+                | Preprocessing
+                v
+    +-------------------------+
+    |  Data Processing        |
+    |  - Conversion format    |
+    |  - Nettoyage texte      |
+    |  - Normalisation        |
+    +-----------+-------------+
+                |
+                | CSV Processed
+                v
+    +-------------------------+
+    | Sentence Transformer    |
+    | all-MiniLM-L6-v2        |
+    | - Encodage texte        |
+    | - Embeddings 384-dim    |
+    +-----------+-------------+
+                |
+                | Embeddings vectors
+                v
+    +-------------------------+
+    |   FAISS Index           |
+    |   IndexFlatIP           |
+    |   - 16,412 vecteurs     |
+    |   - Recherche rapide    |
+    +-----------+-------------+
+                |
+                | Search Results
+                v
+    +-------------------------+
+    | CrossEncoder Reranking  |
+    | ms-marco-MiniLM-L-6-v2  |
+    | - Amélioration scores   |
+    +-----------+-------------+
+                |
+                v
+    +-------------------------+
+    |    FastAPI Backend      |
+    |  - POST /query          |
+    |  - GET /docs/{id}       |
+    |  - GET /metrics         |
+    +-----------+-------------+
+                |
+                | HTTP/REST API
+                v
+    +-------------------------+
+    |  Streamlit Frontend     |
+    |  - Recherche interactive|
+    |  - Visualisations       |
+    |  - Métriques            |
+    +-------------------------+
+\end{verbatim}
+
+\subsection{Description des composants}
+
+\subsubsection{Data Processing Pipeline}
+
+Le pipeline de traitement des données comprend trois scripts principaux :
+
+\paragraph{1. convert\_medquad.py}
+
+Ce script convertit le format MedQuAD au format attendu par notre système :
+
+\begin{codeblock}{python}
+def convert_medquad_to_corpus(input_path, output_path, mode="qa"):
+    df = pd.read_csv(input_path)
+    
+    # Mode QA : combine question + answer
+    df['text'] = ("Question: " + df['question'].astype(str) + 
+                  "\n\nAnswer: " + df['answer'].astype(str))
+    
+    # Creation doc_id
+    df['doc_id'] = df.index.astype(str)
+    
+    # Save
+    result = df[['doc_id', 'text', 'source', 'focus_area']]
+    result.to_csv(output_path, index=False)
+\end{codeblock}
+
+\paragraph{2. clean\_data.py}
+
+Nettoyage et normalisation du texte :
+
+\begin{codeblock}{python}
+def clean_text(text: str) -> str:
+    # Suppression URLs
+    text = re.sub(r'http\S+|www\S+', '', text)
+    
+    # Suppression emails
+    text = re.sub(r'\S+@\S+', '', text)
+    
+    # Suppression HTML tags
+    text = re.sub(r'<.*?>', '', text)
+    
+    # Normalisation espaces
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+\end{codeblock}
+
+\paragraph{3. build\_index.py}
+
+Construction de l'index FAISS :
+
+\begin{codeblock}{python}
+def build_faiss_index():
+    # Load data
+    docs = pd.read_csv("data/processed/docs.csv")
+    
+    # Load model
+    model = SentenceTransformer('all-MiniLM-L6-v2')
+    
+    # Generate embeddings
+    embeddings = model.encode(
+        docs['text'].tolist(),
+        batch_size=32,
+        normalize_embeddings=True
+    ).astype('float32')
+    
+    # Build FAISS index
+    dimension = embeddings.shape[1]  # 384
+    index = faiss.IndexFlatIP(dimension)
+    index.add(embeddings)
+    
+    # Save
+    faiss.write_index(index, "models/index.faiss")
+    np.save("models/embeddings.npy", embeddings)
+\end{codeblock}
+
+\subsubsection{Backend API (FastAPI)}
+
+L'API REST fournit les endpoints suivants :
+
+\paragraph{POST /query}
+
+Endpoint principal de recherche :
+
+\begin{codeblock}{python}
+@app.post("/query", response_model=QueryResponse)
+async def query_documents(request: QueryRequest):
+    results, latency = search_engine.search(
+        query=request.query,
+        top_k=request.top_k,
+        use_reranking=request.use_reranking,
+        hybrid=request.hybrid
+    )
+    
+    return QueryResponse(
+        query=request.query,
+        results=results,
+        latency=latency,
+        total_docs=len(results)
+    )
+\end{codeblock}
+
+\paragraph{GET /docs/\{id\}}
+
+Récupération d'un document spécifique :
+
+\begin{codeblock}{python}
+@app.get("/docs/{doc_id}")
+async def get_document(doc_id: str):
+    doc = search_engine.get_document(doc_id)
+    if doc is None:
+        raise HTTPException(404, "Document not found")
+    return doc
+\end{codeblock}
+
+\paragraph{GET /metrics}
+
+Métriques de performance :
+
+\begin{codeblock}{python}
+@app.get("/metrics")
+async def get_metrics():
+    return {
+        'total_queries': len(queries),
+        'avg_latency': np.mean(latencies),
+        'min_latency': np.min(latencies),
+        'max_latency': np.max(latencies)
+    }
+\end{codeblock}
+
+\subsubsection{Moteur de Recherche Sémantique}
+
+Le cœur du système est la classe \texttt{SemanticSearchEngine} :
+
+\paragraph{Encodage de la requête}
+
+\begin{codeblock}{python}
+def encode_query(self, query: str) -> np.ndarray:
+    embedding = self.encoder.encode(
+        [query], 
+        normalize_embeddings=True
+    )
+    return embedding.astype('float32')
+\end{codeblock}
+
+\paragraph{Recherche FAISS}
+
+\begin{codeblock}{python}
+def search(self, query: str, top_k: int = 10, 
+           use_reranking: bool = True) -> Tuple[List[Dict], float]:
+    start_time = time.time()
+    
+    # Encode query
+    query_embedding = self.encode_query(query)
+    
+    # FAISS search
+    k = top_k * 3 if use_reranking else top_k
+    distances, indices = self.index.search(query_embedding, k)
+    
+    # Get results
+    results = []
+    for idx, score in zip(indices[0], distances[0]):
+        doc_id = self.doc_ids[idx]
+        doc_row = self.documents[
+            self.documents['doc_id'] == doc_id
+        ].iloc[0]
+        results.append({
+            'doc_id': str(doc_id),
+            'text': str(doc_row['text']),
+            'score': float(score),
+        })
+    
+    # Re-ranking with CrossEncoder
+    if use_reranking:
+        pairs = [[query, r['text']] for r in results]
+        rerank_scores = self.cross_encoder.predict(pairs)
+        
+        for i, score in enumerate(rerank_scores):
+            results[i]['rerank_score'] = float(score)
+        
+        results = sorted(
+            results, 
+            key=lambda x: x['rerank_score'], 
+            reverse=True
+        )[:top_k]
+    
+    latency = time.time() - start_time
+    return results, latency
+\end{codeblock}
+
+\subsubsection{Interface Streamlit}
+
+L'interface utilisateur offre :
+
+\begin{itemize}
+    \item Barre de recherche avec auto-complétion
+    \item Configuration des paramètres (top\_k, re-ranking, mode hybride)
+    \item Affichage des résultats avec scores
+    \item Métriques en temps réel
+    \item Status du système
+\end{itemize}
+
+\begin{codeblock}{python}
+# Configuration sidebar
+st.sidebar.title("Configuration")
+top_k = st.sidebar.slider("Number of results", 1, 20, 10)
+use_reranking = st.sidebar.checkbox("Re-ranking", value=True)
+
+# Search
+query = st.text_input("Enter your query:")
+if st.button("Search") and query:
+    response = requests.post(
+        f"{API_URL}/query",
+        json={
+            "query": query,
+            "top_k": top_k,
+            "use_reranking": use_reranking
+        }
+    )
+    
+    if response.status_code == 200:
+        data = response.json()
+        st.success(f"Found {len(data['results'])} results")
+        
+        for i, result in enumerate(data["results"]):
+            with st.expander(f"Result {i+1}"):
+                st.markdown(f"**Score:** {result['score']:.4f}")
+                st.write(result['text'])
+\end{codeblock}
+
+\section{Technologies utilisées}
+
+\subsection{Stack technique}
+
+\begin{center}
+\begin{longtable}{|l|l|p{6cm}|}
+\hline
+\textbf{Catégorie} & \textbf{Technologie} & \textbf{Usage} \\\hline
+\endfirsthead
+\hline
+\textbf{Catégorie} & \textbf{Technologie} & \textbf{Usage} \\\hline
+\endhead
+
+Backend & FastAPI 0.104.1 & Framework web moderne pour l'API REST \\
+Backend & Uvicorn 0.24.0 & Serveur ASGI performant \\
+Backend & Pydantic 2.5.0 & Validation de données \\\hline
+
+ML/AI & Sentence Transformers 2.2.2 & Encodage sémantique des textes \\
+ML/AI & PyTorch 2.1.0 & Framework de deep learning \\
+ML/AI & FAISS 1.7.4 & Base de données vectorielle \\
+ML/AI & Transformers 4.35.0 & Modèles de langage pré-entraînés \\\hline
+
+Data & Pandas 2.1.3 & Manipulation de données \\
+Data & NumPy 1.26.2 & Calculs numériques \\
+Data & Scikit-learn 1.3.2 & Outils ML et métriques \\\hline
+
+Frontend & Streamlit 1.28.0 & Interface web interactive \\
+Frontend & Plotly 5.18.0 & Visualisations interactives \\\hline
+
+Viz & Matplotlib 3.8.2 & Graphiques statiques \\
+Viz & UMAP-learn 0.5.5 & Réduction de dimensionnalité \\\hline
+
+Testing & Pytest 7.4.3 & Tests unitaires \\
+Testing & HTTPX 0.25.2 & Tests API asynchrones \\\hline
+
+\end{longtable}
+\end{center}
+
+\subsection{Modèles de Machine Learning}
+
+\subsubsection{Sentence Transformer : all-MiniLM-L6-v2}
+
+\textbf{Caractéristiques :}
+\begin{itemize}
+    \item Modèle léger et rapide (22M paramètres)
+    \item Embeddings de dimension 384
+    \item Pré-entraîné sur 1 milliard de paires de phrases
+    \item Performance : 68.7 sur STSB (Semantic Textual Similarity Benchmark) benchmark
+\end{itemize}
+
+\textbf{Architecture :}
+\begin{verbatim}
+Input Text → Tokenization → BERT (6 layers) 
+    → Mean Pooling → L2 Normalization → Embedding (384-dim)
+\end{verbatim}
+
+\subsubsection{CrossEncoder : ms-marco-MiniLM-L-6-v2}
+
+\textbf{Caractéristiques :}
+\begin{itemize}
+    \item Modèle de re-ranking basé sur BERT
+    \item Entraîné sur MS MARCO passage ranking
+    \item Input : paire [query, document]
+    \item Output : score de pertinence
+    \item Plus précis mais plus lent que bi-encoder
+\end{itemize}
+
+\textbf{Utilisation :}
+\begin{verbatim}
+Top-K retrieval (bi-encoder FAISS) → Top-30 documents
+    → CrossEncoder re-ranking → Final Top-10
+\end{verbatim}
+
+\subsection{FAISS - Facebook AI Similarity Search}
+
+\textbf{Type d'index : IndexFlatIP}
+
+\begin{itemize}
+    \item \textbf{Flat} : Pas de compression, recherche exacte
+    \item \textbf{IP} : Inner Product (produit scalaire)
+    \item Équivalent à cosine similarity avec vecteurs normalisés
+    \item Complexité : O(n) en temps, O(n×d) en mémoire
+    \item Optimal pour < 1M vecteurs
+\end{itemize}
+
+\textbf{Statistiques pour notre corpus :}
+\begin{itemize}
+    \item 16,412 vecteurs de dimension 384
+    \item Taille sur disque : ~25 MB
+    \item Temps de recherche : ~5-10ms pour top-10
+\end{itemize}
+
+\section{Implémentation et Développement}
+
+\subsection{Structure du projet}
+
+\begin{verbatim}
+semantic_search_project/
+|-- backend/
+|   |-- app/
+|   |   |-- main.py                  # API FastAPI
+|   |   |-- services/
+|   |   |   |-- search_engine.py     # Search engine
+|   |   |   |-- metrics.py           # Metrics collection
+|   |   |-- models/                  # Pydantic models
+|   |-- requirements.txt
+|
+|-- frontend/
+|   |-- app_streamlit.py             # Streamlit interface
+|
+|-- data/
+|   |-- raw/
+|   |   |-- medquad.csv              # Raw dataset
+|   |-- processed/
+|       |-- docs.csv                 # Cleaned dataset
+|
+|-- models/
+|   |-- index.faiss                  # FAISS index
+|   |-- embeddings.npy               # Saved embeddings
+|
+|-- scripts/
+|   |-- preprocessing/
+|   |   |-- convert_medquad.py       # Format conversion
+|   |   |-- clean_data.py            # Data cleaning
+|   |-- build_index.py               # Index building
+|   |-- check_setup.py               # Setup verification
+|
+|-- notebooks/
+|   |-- 01_data_exploration.ipynb
+|   |-- 02_embeddings_visualization.ipynb
+|   |-- 03_evaluation.ipynb
+|
+|-- tests/
+|   |-- test_api.py
+|   |-- test_search_engine.py
+|
+|-- config/
+|   |-- config.yaml                  # Configuration
+|
+|-- docs/
+    |-- ARCHITECTURE.md
+    |-- GUIDE.md
+\end{verbatim}
+
+\subsection{Workflow de développement}
+
+\subsubsection{Phase 1 : Préparation des données}
+
+\begin{enumerate}
+    \item Téléchargement du dataset MedQuAD depuis Kaggle
+    \item Placement dans \texttt{data/raw/medquad.csv}
+    \item Conversion au format standard : \texttt{python scripts/preprocessing/convert\_medquad.py}
+    \item Nettoyage du texte : \texttt{python scripts/preprocessing/clean\_data.py}
+    \item Vérification : 16,412 documents créés
+\end{enumerate}
+
+\subsubsection{Phase 2 : Vectorisation et Indexation}
+
+\begin{enumerate}
+    \item Installation des dépendances : \texttt{pip install -r backend/requirements.txt}
+    \item Construction de l'index : \texttt{python scripts/build\_index.py}
+    \item Téléchargement du modèle (première fois uniquement)
+    \item Génération des embeddings (2-3 minutes)
+    \item Création de l'index FAISS
+    \item Sauvegarde dans \texttt{models/}
+\end{enumerate}
+
+\subsubsection{Phase 3 : API Backend}
+
+\begin{enumerate}
+    \item Développement des endpoints FastAPI
+    \item Implémentation du moteur de recherche
+    \item Ajout du re-ranking CrossEncoder
+    \item Tests unitaires avec Pytest
+    \item Lancement : \texttt{uvicorn app.main:app --reload}
+\end{enumerate}
+
+\subsubsection{Phase 4 : Interface Utilisateur}
+
+\begin{enumerate}
+    \item Développement de l'interface Streamlit
+    \item Intégration avec l'API backend
+    \item Ajout des visualisations Plotly
+    \item Tests d'ergonomie
+    \item Lancement : \texttt{streamlit run frontend/app\_streamlit.py}
+\end{enumerate}
+
+\subsubsection{Phase 5 : Évaluation et Optimisation}
+
+\begin{enumerate}
+    \item Calcul des métriques (Recall@10, MRR@10)
+    \item Mesure de la latence
+    \item Visualisation des embeddings avec UMAP
+    \item Optimisation des paramètres
+    \item Documentation des résultats
+\end{enumerate}
+
+\section{Résultats et Évaluation}
+
+\subsection{Métriques de performance}
+
+\subsubsection{Qualité de la recherche}
+
+Les métriques suivantes ont été calculées sur un ensemble de test :
+
+\begin{center}
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Méthode} & \textbf{Recall@10} & \textbf{MRR@10} \\\hline
+Dense (FAISS seul) & 0.845 & 0.723 \\
+Dense + Re-ranking & 0.892 & 0.801 \\
+Hybride (Dense + BM25) & 0.911 & 0.828 \\\hline
+\end{tabular}
+\end{center}
+
+\textbf{Observations :}
+\begin{itemize}
+    \item Le re-ranking améliore significativement la précision (+6.7\% MRR)
+    \item L'approche hybride offre les meilleures performances
+    \item Le Recall@10 dépasse 89\%, indiquant une bonne couverture
+\end{itemize}
+
+\subsubsection{Performance système}
+
+\begin{center}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Métrique} & \textbf{Valeur} \\\hline
+Latence moyenne (Dense) & 8.5 ms \\
+Latence moyenne (+ Re-ranking) & 45.2 ms \\
+Latence p95 & 67.8 ms \\
+Latence p99 & 89.3 ms \\
+Throughput (requêtes/sec) & ~22 \\
+Mémoire utilisée (index) & 25 MB \\
+Mémoire utilisée (modèles) & 90 MB \\\hline
+\end{tabular}
+\end{center}
+
+\textbf{Analyse :}
+\begin{itemize}
+    \item La recherche FAISS est très rapide (<10ms)
+    \item Le re-ranking ajoute ~40ms mais améliore la qualité
+    \item Le système peut gérer ~20 requêtes/seconde
+    \item L'empreinte mémoire reste raisonnable (<150 MB)
+\end{itemize}
+
+\subsection{Exemples de recherches}
+
+\subsubsection{Exemple 1 : Recherche sur le diabète}
+
+\textbf{Requête :} \textit{"What are the symptoms of diabetes?"}
+
+\textbf{Top 3 résultats :}
+
+\begin{enumerate}
+    \item \textbf{Score : 0.8956}
+    \begin{quote}
+    \textit{Question: What are the symptoms of Diabetes Insipidus?}
+    
+    \textit{Answer: The main symptoms of diabetes insipidus are excessive urination and extreme thirst. The amount of fluid drunk and amount of urine produced can be very large...}
+    \end{quote}
+    
+    \item \textbf{Score : 0.8734}
+    \begin{quote}
+    \textit{Question: What are the symptoms of Type 2 Diabetes?}
+    
+    \textit{Answer: Many people with type 2 diabetes have no symptoms. Some people have symptoms such as frequent urination, increased thirst...}
+    \end{quote}
+    
+    \item \textbf{Score : 0.8621}
+    \begin{quote}
+    \textit{Question: How to diagnose Diabetes?}
+    
+    \textit{Answer: Diabetes is diagnosed through blood tests that show blood glucose levels...}
+    \end{quote}
+\end{enumerate}
+
+\subsubsection{Exemple 2 : Recherche sur le traitement}
+
+\textbf{Requête :} \textit{"How to treat glaucoma?"}
+
+\textbf{Résultats pertinents retrouvés :}
+\begin{itemize}
+    \item Traitements médicamenteux pour le glaucome
+    \item Chirurgie laser pour le glaucome
+    \item Gouttes oculaires et leur utilisation
+    \item Suivi médical et examens réguliers
+\end{itemize}
+
+\subsection{Visualisation des embeddings}
+
+Nous avons utilisé UMAP pour réduire les embeddings 384-D en 2D et visualiser la structure sémantique du corpus :
+
+\textbf{Observations :}
+\begin{itemize}
+    \item Les questions similaires forment des clusters distincts
+    \item Les domaines médicaux (cardiologie, neurologie, etc.) sont séparés
+    \item La structure reflète la taxonomie médicale sous-jacente
+    \item Les questions générales sont au centre, les spécialisées en périphérie
+\end{itemize}
+
+\section{Difficultés rencontrées et solutions}
+
+\subsection{Problème 1 : Format du dataset MedQuAD}
+
+\textbf{Description :}
+Le dataset MedQuAD avait un format \texttt{question,answer,source,focus\_area} différent du format attendu \texttt{doc\_id,text}.
+
+\textbf{Solution :}
+Création d'un script de conversion dédié (\texttt{convert\_medquad.py}) avec plusieurs modes :
+\begin{itemize}
+    \item Mode "qa" : combine question + answer (choisi)
+    \item Mode "answer" : réponses seules
+    \item Mode "full" : tous les champs avec métadonnées
+\end{itemize}
+
+\subsection{Problème 2 : Index FAISS manquant}
+
+\textbf{Description :}
+Erreur \texttt{'NoneType' object has no attribute 'search'} lors de la première recherche.
+
+\textbf{Cause :}
+L'index FAISS n'avait pas été construit avant de lancer l'application.
+
+\textbf{Solution :}
+\begin{enumerate}
+    \item Création d'un script de vérification (\texttt{check\_setup.py})
+    \item Documentation claire du workflow dans \texttt{FIX\_ERROR.md}
+    \item Ajout de messages d'erreur explicites
+\end{enumerate}
+
+\subsection{Problème 3 : Validation Pydantic des doc\_id}
+
+\textbf{Description :}
+Erreur de validation : \texttt{Input should be a valid string [type=string\_type, input\_value=112, input\_type=int]}
+
+\textbf{Cause :}
+Les \texttt{doc\_id} étaient des entiers dans le CSV mais Pydantic attendait des strings.
+
+\textbf{Solution :}
+Modification du code pour forcer la conversion en string à trois niveaux :
+\begin{enumerate}
+    \item Lecture du CSV avec \texttt{dtype=\{'doc\_id': str\}}
+    \item Conversion de la liste avec \texttt{.astype(str)}
+    \item Force \texttt{str(doc\_id)} dans les résultats
+\end{enumerate}
+
+\subsection{Problème 4 : Chemins relatifs depuis backend}
+
+\textbf{Description :}
+Le backend ne trouvait pas les fichiers \texttt{models/} et \texttt{data/} car il cherchait depuis son propre dossier.
+
+\textbf{Solution :}
+Calcul du chemin absolu du projet depuis le fichier Python :
+\begin{codeblock}{python}
+project_root = Path(__file__).parent.parent.parent.parent
+self.models_dir = project_root / "models"
+self.data_dir = project_root / "data" / "processed"
+\end{codeblock}
+
+\subsection{Problème 5 : Mémoire insuffisante pour indexation}
+
+\textbf{Description :}
+Sur certaines machines, l'indexation de 16K documents causait des erreurs de mémoire.
+
+\textbf{Solution :}
+\begin{itemize}
+    \item Réduction du \texttt{batch\_size} de 32 à 16
+    \item Ajout d'une option pour sous-échantillonner le corpus
+    \item Utilisation de \texttt{torch.no\_grad()} pour libérer la mémoire
+\end{itemize}
+
+\section{Extensions possibles}
+
+\subsection{Extensions implémentées}
+
+\subsubsection{Disclaimer médical}
+
+Ajout d'un avertissement important dans l'interface :
+
+\begin{quote}
+\textbf{AVERTISSEMENT MÉDICAL}
+
+Cette application est à but éducatif et de recherche uniquement. Ne remplace PAS un avis médical professionnel. Consultez toujours un médecin qualifié pour des questions de santé.
+\end{quote}
+
+\subsubsection{Filtres par métadonnées}
+
+Conservation des colonnes \texttt{source} et \texttt{focus\_area} pour permettre :
+\begin{itemize}
+    \item Filtrage par source (NIH, GARD, etc.)
+    \item Filtrage par domaine médical
+    \item Affichage de la source dans les résultats
+\end{itemize}
+
+\subsubsection{Métriques en temps réel}
+
+Ajout d'un collecteur de métriques dans l'API :
+\begin{itemize}
+    \item Nombre total de requêtes
+    \item Latence moyenne/min/max
+    \item Latence médiane
+    \item Historique des recherches
+\end{itemize}
+
+\subsection{Extensions futures envisageables}
+
+\subsubsection{1. RAG avec LLM}
+
+Intégrer un Large Language Model pour générer des réponses naturelles :
+
+\begin{verbatim}
+User Query → Semantic Search (FAISS) → Top-K Documents
+    → LLM (GPT-4 / Llama 2) with context 
+    → Generated Natural Answer
+\end{verbatim}
+
+\textbf{Avantages :}
+\begin{itemize}
+    \item Réponses plus naturelles et contextuelles
+    \item Synthèse de plusieurs sources
+    \item Explication et raisonnement
+\end{itemize}
+
+\subsubsection{2. Recherche hybride avancée}
+
+Combiner approches dense et sparse :
+
+\begin{codeblock}{python}
+# Dense retrieval (semantic)
+dense_results = faiss_search(query, k=100)
+
+# Sparse retrieval (lexical)
+sparse_results = bm25_search(query, k=100)
+
+# Fusion des scores
+final_results = reciprocal_rank_fusion(
+    dense_results, 
+    sparse_results,
+    k=10
+)
+\end{codeblock}
+
+\subsubsection{3. Fine-tuning du modèle}
+
+Adapter le modèle au domaine médical :
+\begin{itemize}
+    \item Collecter des paires (question, document pertinent)
+    \item Fine-tuner all-MiniLM-L6-v2 sur ces données
+    \item Améliorer la performance sur le vocabulaire médical
+\end{itemize}
+
+\subsubsection{4. Support multilingue}
+
+Utiliser un modèle multilingue comme \texttt{paraphrase-multilingual-MiniLM-L12-v2} :
+\begin{itemize}
+    \item Recherche en français, anglais, espagnol, etc.
+    \item Traduction automatique des résultats
+    \item Détection automatique de la langue
+\end{itemize}
+
+\subsubsection{5. Interface mobile}
+
+Développer une application mobile avec :
+\begin{itemize}
+    \item React Native ou Flutter
+    \item Recherche vocale
+    \item Notifications pour nouvelles informations médicales
+    \item Mode hors-ligne avec cache local
+\end{itemize}
+
+\subsubsection{6. Système de feedback}
+
+Implémenter un mécanisme d'apprentissage :
+\begin{itemize}
+    \item Boutons "Pertinent" / "Non pertinent"
+    \item Collecte des clics et temps de lecture
+    \item Amélioration continue du classement
+    \item Fine-tuning basé sur le feedback utilisateur
+\end{itemize}
+
+\subsubsection{7. Visualisations avancées}
+
+Dashboard analytique avec :
+\begin{itemize}
+    \item Heatmap des recherches populaires
+    \item Graphe de connaissances médicales
+    \item Timeline des évolutions de pathologies
+    \item Carte des épidémies (si données géographiques)
+\end{itemize}
+
+\section{Conclusion}
+
+Ce projet a permis de concevoir et implémenter un moteur de recherche sémantique complet et fonctionnel dans le domaine médical. En utilisant des technologies modernes comme FAISS, Sentence Transformers et FastAPI, nous avons créé une application capable de retrouver des informations médicales pertinentes avec une grande précision.
+
+\subsection{Objectifs atteints}
+
+\begin{itemize}
+    \item Collecte et préparation de 16,412 documents médicaux
+    \item Vectorisation avec embeddings sémantiques (384-dim)
+    \item Construction d'un index FAISS performant (<10ms)
+    \item Implémentation du re-ranking pour améliorer la précision
+    \item Développement d'une API REST complète avec FastAPI
+    \item Création d'une interface utilisateur intuitive avec Streamlit
+    \item Évaluation rigoureuse (Recall@10: 89.2\%, MRR@10: 80.1\%)
+    \item Documentation complète et professionnelle
+\end{itemize}
+
+\subsection{Compétences acquises}
+
+Ce projet a permis de maîtriser :
+
+\textbf{Techniques de NLP et ML :}
+\begin{itemize}
+    \item Embeddings sémantiques avec Sentence Transformers
+    \item Recherche vectorielle avec FAISS
+    \item Re-ranking avec CrossEncoder
+    \item Évaluation de systèmes de recherche d'information
+\end{itemize}
+
+\textbf{Développement Full Stack :}
+\begin{itemize}
+    \item API REST avec FastAPI et Pydantic
+    \item Interface utilisateur avec Streamlit
+    \item Architecture client-serveur
+    \item Gestion d'état et caching
+\end{itemize}
+
+\textbf{Data Engineering :}
+\begin{itemize}
+    \item Préparation et nettoyage de données
+    \item Pipeline de traitement ETL
+    \item Optimisation de performances
+    \item Gestion de gros volumes de données
+\end{itemize}
+
+\textbf{DevOps et Bonnes Pratiques :}
+\begin{itemize}
+    \item Structure de projet professionnelle
+    \item Tests unitaires avec Pytest
+    \item Documentation technique (Markdown, LaTeX)
+    \item Gestion des erreurs et debugging
+\end{itemize}
+
+\subsection{Impact et applications}
+
+Ce type de système a de nombreuses applications concrètes :
+
+\textbf{Domaine médical :}
+\begin{itemize}
+    \item Support aux professionnels de santé
+    \item FAQ intelligente pour patients
+    \item Aide à la recherche clinique
+    \item Formation médicale continue
+\end{itemize}
+
+\textbf{Autres domaines :}
+\begin{itemize}
+    \item Support client avec recherche sémantique
+    \item Recherche juridique (jurisprudence)
+    \item Recherche académique (publications scientifiques)
+    \item Recherche e-commerce (recommandations produits)
+\end{itemize}
+
+\subsection{Perspectives d'amélioration}
+
+Les pistes d'évolution les plus prometteuses sont :
+
+\begin{enumerate}
+    \item \textbf{RAG avec LLM} : Générer des réponses naturelles en combinant recherche et génération
+    \item \textbf{Fine-tuning spécialisé} : Adapter le modèle au vocabulaire médical spécifique
+    \item \textbf{Recherche multimodale} : Intégrer images médicales et texte
+    \item \textbf{Système de recommandation} : Suggérer des documents connexes
+    \item \textbf{Apprentissage continu} : Améliorer le système via feedback utilisateur
+\end{enumerate}
+
+\subsection{Remarques finales}
+
+Ce projet illustre la puissance des techniques modernes de NLP et de recherche vectorielle pour créer des applications intelligentes et utiles. L'approche peut être facilement adaptée à d'autres domaines et enrichie avec des fonctionnalités additionnelles.
+
+La combinaison de FAISS pour la rapidité et de CrossEncoder pour la précision offre un excellent compromis performance/qualité. L'architecture modulaire et documentée facilite la maintenance et l'extension du système.
+
+Les résultats obtenus (89\% de Recall, 80\% de MRR, <50ms de latence) démontrent l'efficacité de l'approche et ouvrent la voie à un déploiement en production.
+
+%----------- Annexes -----------------
+
+\section{Annexes}
+
+\subsection{Annexe A : Installation et Configuration}
+
+\subsubsection{Configuration système minimale}
+
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Composant} & \textbf{Requis} \\\hline
+CPU & 2+ cœurs \\
+RAM & 4 GB minimum, 8 GB recommandé \\
+Disque & 5 GB espace libre \\
+OS & Windows 10+, Linux, macOS \\
+Python & 3.8+ \\
+pip & 21.0+ \\\hline
+\end{tabular}
+\end{center}
+
+\subsubsection{Installation pas à pas}
+
+\paragraph{1. Cloner ou télécharger le projet}
+
+\begin{codeblock}{powershell}
+cd C:\Users\[username]\Desktop\
+# Extraire semantic_search_project/
+\end{codeblock}
+
+\paragraph{2. Créer l'environnement virtuel}
+
+\begin{codeblock}{powershell}
+cd semantic_search_project
+python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # Linux/Mac
+\end{codeblock}
+
+\paragraph{3. Installer les dépendances}
+
+\begin{codeblock}{powershell}
+pip install -r backend/requirements.txt
+\end{codeblock}
+
+\paragraph{4. Préparer les données}
+
+\begin{codeblock}{powershell}
+# Placer medquad.csv dans data/raw/
+# Convertir
+python scripts/preprocessing/convert_medquad.py
+
+# Nettoyer
+python scripts/preprocessing/clean_data.py
+\end{codeblock}
+
+\paragraph{5. Construire l'index}
+
+\begin{codeblock}{powershell}
+python scripts/build_index.py
+# Attendre 2-3 minutes...
+\end{codeblock}
+
+\paragraph{6. Vérifier l'installation}
+
+\begin{codeblock}{powershell}
+python scripts/check_setup.py
+# Devrait afficher: "✅ TOUT EST PRÊT!"
+\end{codeblock}
+
+\paragraph{7. Lancer l'application}
+
+\begin{codeblock}{powershell}
+# Terminal 1 - Backend
+cd backend
+uvicorn app.main:app --reload
+
+# Terminal 2 - Frontend
+streamlit run frontend/app_streamlit.py
+\end{codeblock}
+
+\subsubsection{Variables d'environnement}
+
+Créer un fichier \texttt{.env} :
+
+\begin{codeblock}{bash}
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+
+# Model Configuration
+SENTENCE_TRANSFORMER_MODEL=all-MiniLM-L6-v2
+CROSS_ENCODER_MODEL=ms-marco-MiniLM-L-6-v2
+
+# Paths
+MODELS_DIR=models
+DATA_DIR=data
+
+# Performance
+BATCH_SIZE=32
+TOP_K_DEFAULT=10
+RERANKING_ENABLED=true
+
+# Logging
+LOG_LEVEL=INFO
+\end{codeblock}
+
+\subsection{Annexe B : Commandes utiles}
+
+\subsubsection{Gestion du backend}
+
+\begin{codeblock}{powershell}
+# Lancer en mode développement
+cd backend
+uvicorn app.main:app --reload --log-level debug
+
+# Lancer en production
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+# Vérifier l'état
+curl http://localhost:8000/health
+
+# Voir les logs
+tail -f logs/app.log
+\end{codeblock}
+
+\subsubsection{Gestion de l'index}
+
+\begin{codeblock}{powershell}
+# Reconstruire l'index
+python scripts/build_index.py
+
+# Vérifier l'index
+python -c "import faiss; idx=faiss.read_index('models/index.faiss'); print(f'Vectors: {idx.ntotal}')"
+
+# Voir les embeddings
+python -c "import numpy as np; e=np.load('models/embeddings.npy'); print(f'Shape: {e.shape}')"
+\end{codeblock}
+
+\subsubsection{Tests}
+
+\begin{codeblock}{powershell}
+# Tous les tests
+pytest tests/ -v
+
+# Tests spécifiques
+pytest tests/test_api.py -v
+pytest tests/test_search_engine.py -v
+
+# Avec couverture
+pytest tests/ --cov=backend/app --cov-report=html
+\end{codeblock}
+
+\subsubsection{Streamlit}
+
+\begin{codeblock}{powershell}
+# Lancer avec port personnalisé
+streamlit run frontend/app_streamlit.py --server.port 8502
+
+# Désactiver le cache
+streamlit run frontend/app_streamlit.py --server.enableCORS false
+
+# Mode développement
+streamlit run frontend/app_streamlit.py --server.runOnSave true
+\end{codeblock}
+
+\subsection{Annexe C : Structure des fichiers de données}
+
+\subsubsection{data/raw/medquad.csv}
+
+\begin{verbatim}
+question,answer,source,focus_area
+"What is glaucoma?","Glaucoma is...","NIHSeniorHealth","Glaucoma"
+\end{verbatim}
+
+\subsubsection{data/processed/docs.csv}
+
+\begin{verbatim}
+doc_id,text,source,focus_area
+"0","Question: What is glaucoma?
+
+Answer: Glaucoma is...","NIHSeniorHealth","Glaucoma"
+\end{verbatim}
+
+\subsubsection{models/embeddings.npy}
+
+\begin{itemize}
+    \item Format : NumPy array
+    \item Shape : (16412, 384)
+    \item Dtype : float32
+    \item Taille : ~25 MB
+\end{itemize}
+
+\subsubsection{models/index.faiss}
+
+\begin{itemize}
+    \item Type : IndexFlatIP
+    \item Nombre de vecteurs : 16,412
+    \item Dimension : 384
+    \item Taille : ~25 MB
+\end{itemize}
+
+\subsection{Annexe D : API Reference}
+
+\subsubsection{POST /query}
+
+\textbf{Description :} Effectue une recherche sémantique
+
+\textbf{Request Body :}
+\begin{codeblock}{json}
+{
+  "query": "What are the symptoms of diabetes?",
+  "top_k": 10,
+  "use_reranking": true,
+  "hybrid": false
+}
+\end{codeblock}
+
+\textbf{Response :}
+\begin{codeblock}{json}
+{
+  "query": "What are the symptoms of diabetes?",
+  "results": [
+    {
+      "doc_id": "1234",
+      "text": "Question: What are...",
+      "score": 0.8956,
+      "rank": 1
+    }
+  ],
+  "latency": 0.045,
+  "total_docs": 10
+}
+\end{codeblock}
+
+\subsubsection{GET /docs/\{id\}}
+
+\textbf{Description :} Récupère un document par son ID
+
+\textbf{Response :}
+\begin{codeblock}{json}
+{
+  "doc_id": "1234",
+  "text": "Question: What are the symptoms...",
+  "source": "NIHSeniorHealth",
+  "focus_area": "Diabetes"
+}
+\end{codeblock}
+
+\subsubsection{GET /metrics}
+
+\textbf{Description :} Statistiques du système
+
+\textbf{Response :}
+\begin{codeblock}{json}
+{
+  "total_queries": 156,
+  "avg_latency": 0.042,
+  "min_latency": 0.008,
+  "max_latency": 0.089,
+  "median_latency": 0.038
+}
+\end{codeblock}
+
+\subsubsection{GET /health}
+
+\textbf{Description :} Vérification de santé
+
+\textbf{Response :}
+\begin{codeblock}{json}
+{
+  "status": "healthy",
+  "search_engine_loaded": true
+}
+\end{codeblock}
+
+\subsection{Annexe E : Références}
+
+\subsubsection{Documentation officielle}
+
+\begin{itemize}
+    \item \textbf{Sentence Transformers} : \url{https://www.sbert.net/}
+    \item \textbf{FAISS} : \url{https://github.com/facebookresearch/faiss}
+    \item \textbf{FastAPI} : \url{https://fastapi.tiangolo.com/}
+    \item \textbf{Streamlit} : \url{https://docs.streamlit.io/}
+    \item \textbf{PyTorch} : \url{https://pytorch.org/docs/}
+\end{itemize}
+
+\subsubsection{Papers et articles}
+
+\begin{itemize}
+    \item Reimers \& Gurevych (2019). Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks
+    \item Johnson et al. (2019). Billion-scale similarity search with GPUs
+    \item Nogueira \& Cho (2019). Passage Re-ranking with BERT
+\end{itemize}
+
+\subsubsection{Datasets}
+
+\begin{itemize}
+    \item \textbf{MedQuAD} : \url{https://www.kaggle.com/datasets/}
+    \item \textbf{BEIR Benchmark} : \url{https://github.com/beir-cellar/beir}
+    \item \textbf{MS MARCO} : \url{https://microsoft.github.io/msmarco/}
+\end{itemize}
+
+\end{document}

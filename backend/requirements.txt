@@ -1,0 +1,40 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# ML/AI
+sentence-transformers==2.2.2
+torch==2.1.0
+transformers==4.35.0
+faiss-cpu==1.7.4
+
+# Data processing
+pandas==2.1.3
+numpy==1.26.2
+scikit-learn==1.3.2
+ir-datasets==0.5.5
+
+# Text processing
+rank-bm25==0.2.2
+nltk==3.8.1
+spacy==3.7.2
+
+# Utilities
+python-dotenv==1.0.0
+pyyaml==6.0.1
+tqdm==4.66.1
+
+# Database
+sqlalchemy==2.0.23
+
+# Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.18.0
+umap-learn==0.5.5
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
