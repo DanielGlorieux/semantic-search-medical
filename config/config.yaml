@@ -1,0 +1,45 @@
+# Configuration file for Semantic Search Project
+
+# Model Configuration
+model:
+  encoder: "sentence-transformers/all-MiniLM-L6-v2"
+  cross_encoder: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  batch_size: 32
+  max_length: 512
+
+# FAISS Configuration
+faiss:
+  index_type: "IndexFlatIP"  # IndexFlatIP, IndexIVFFlat, IndexIVFPQ
+  normalize_embeddings: true
+  nprobe: 10  # for IVF indices
+
+# Search Configuration
+search:
+  default_top_k: 10
+  reranking_enabled: true
+  reranking_top_k: 30
+  hybrid_alpha: 0.5  # weight for dense search in hybrid mode
+
+# Data Paths
+paths:
+  data_dir: "data"
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  models_dir: "models"
+  logs_dir: "logs"
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  reload: true
+
+# Evaluation
+evaluation:
+  metrics:
+    - "recall@10"
+    - "mrr@10"
+    - "ndcg@10"
+  test_queries_path: "data/processed/queries_test.csv"
+  qrels_path: "data/processed/qrels_test.csv"
