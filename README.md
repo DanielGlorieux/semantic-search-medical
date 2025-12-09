@@ -1,7 +1,26 @@
-# Projet de Recherche Sémantique - Big Data & Vector DB
+# 🏥 Medical Search Engine - Projet de Recherche Sémantique
+
+[![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.29+-red.svg)](https://streamlit.io/)
+[![License](https://img.shields.io/badge/License-Educational-yellow.svg)]()
 
 ## 📋 Description
-Application de recherche sémantique utilisant Spark, FAISS et des embeddings pour retrouver des documents pertinents à partir de requêtes en langage naturel.
+
+Application de recherche sémantique médicale avec génération de réponses par IA (RAG). Utilise FAISS pour l'indexation vectorielle, Sentence Transformers pour les embeddings, et Google Gemini pour générer des réponses conviviales en français.
+
+**Dataset**: 16,412 questions médicales du dataset MedQuAD (Kaggle)  
+**Technologies**: Python, FAISS, Sentence Transformers, Google Gemini, FastAPI, Streamlit
+
+### ✨ Fonctionnalités Clés
+
+- 🔍 **Recherche Sémantique Ultra-Rapide** (~50ms)
+- 🤖 **RAG avec Google Gemini** (réponses en français)
+- ⚡ **Re-ranking Intelligent** avec CrossEncoder
+- 📊 **Interface Moderne** avec statistiques en temps réel
+- 📈 **Métriques de Performance** (Recall, MRR, Latence)
+- 🌐 **API REST** documentée (Swagger)
+- 🎨 **Thème Sombre** optimisé pour la lisibilité
 
 ## 🏗️ Architecture
 ```
